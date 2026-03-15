@@ -2,6 +2,7 @@ from flask import Flask, request, abort, jsonify
 from flask_cors import CORS
 import random
 import os
+import string
 
 from models import setup_db, Question, Category, db
 
@@ -46,6 +47,9 @@ def create_app(test_config=None):
     """
     @app.route("/categories", methods=["GET"])
     def fetch_all_available_categories():
+        if len(request.args) > 1:
+            abort(401)
+
         categories = Category.query.all()
         result_dict = {}
         for category in categories:
@@ -69,11 +73,17 @@ def create_app(test_config=None):
     """
     @app.route("/questions", methods=["GET"])
     def paginate_available_questions():
+        if len(request.args) >= 2:
+            abort(401)
+
         page_number = int(request.args.get("page", "1"))
         questions = Question.query.all()
+
+        if page_number > len(questions) / 10:
+            abort(404)
+
         categories = Category.query.all()
         length = len(questions)
-
         start = min((page_number - 1) * QUESTIONS_PER_PAGE, len(questions))
         end = min(start + QUESTIONS_PER_PAGE, len(questions))
         paginated_questions = questions[start:end]
@@ -118,11 +128,13 @@ def create_app(test_config=None):
     @app.route("/questions", methods=["POST"])
     def create_new_question():
         req = request.get_json()
+        if len(req) != 4:
+            abort(415)
         question = Question(
-            req.get("question", ""),
-            req.get("answer", ""),
-            req.get("category", ""),
-            req.get("difficulty", 1)
+            req.get("question"),
+            req.get("answer"),
+            req.get("category"),
+            req.get("difficulty")
         )
         question.insert() 
 
@@ -143,6 +155,13 @@ def create_app(test_config=None):
     def search_questions():
         data = request.get_json()
         search_string = data.get("searchTerm", "")
+        if len(search_string) <= 0:
+            abort(401)
+
+        for punc in string.punctuation:
+            if punc in search_string:
+                print(punc)
+                abort(415)
         matching_questions = Question.query.filter(Question.question.ilike(f'%{search_string}%')).all()
         length = len(matching_questions) 
         return jsonify({
@@ -160,6 +179,9 @@ def create_app(test_config=None):
     """
     @app.route("/categories/<int:category_id>/questions", methods=["GET"])
     def fetch_questions_by_category_id(category_id):
+        if len(request.args) > 1:
+            abort(401)
+
         questions = []
         current_category = ""
 
@@ -168,7 +190,7 @@ def create_app(test_config=None):
             questions = Question.query.filter(Question.category == category_id).all()
         except Exception as e:
             abort(404)
-        
+
         length = len(questions)
         return jsonify({
             "questions": [q.format() for q in questions],
@@ -193,6 +215,9 @@ def create_app(test_config=None):
         previous_questions = data.get("previous_questions")
         quiz_category = data.get("quiz_category").get('id')
 
+        num_of_categories = len(Category.query.all())
+        if int(quiz_category) > num_of_categories:
+            abort(404)
         questions = []
         if quiz_category == 0:
             questions = Question.query.filter(
@@ -244,6 +269,21 @@ def create_app(test_config=None):
             "success": False,
             "message": "Resource was not found."
         }), 404
+    
+    @app.errorhandler(405)
+    def invalid_method(error):
+        return jsonify({
+            "success": False,
+            "message": "Route not callable with selected method."
+        }), 405
+    
+    @app.errorhandler(415)
+    def missing_request_body(error):
+        return jsonify({
+            "success": False,
+            "message": "Missing required fields in the request body."
+        }), 415
+
 
     @app.errorhandler(422)
     def unservicable_entity(error): 

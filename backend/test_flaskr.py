@@ -81,7 +81,18 @@ class TriviaTestCase(unittest.TestCase):
 
     def test_delete_question(self):
         with self.app.app_context():
-            response = self.client.delete("/questions/4")
+            # First create a question to delete
+            question = Question(
+                question='Test question to delete',
+                answer='Test answer',
+                category='1',
+                difficulty=1
+            )
+            question.insert()
+            question_id = question.id
+
+            # Now delete it
+            response = self.client.delete(f"/questions/{question_id}")
             self.assertEqual(response.status_code, 200)
 
             data = response.get_json()
@@ -133,22 +144,129 @@ class TriviaTestCase(unittest.TestCase):
 
         return
 
-    def test_delete_question_but_not_found(self):
+    # Deleting Failures
+    def test_fails_to_delete_question(self):
         with self.app.app_context():
             response = self.client.delete("/questions/1000")
             self.assertEqual(response.status_code, 404)
 
         return
     
+    def test_fails_with_repeating_deletes(self):
+        with self.app.app_context():
+            # First create a question to delete
+            question = Question(
+                question='Test question for repeat delete',
+                answer='Test answer',
+                category='1',
+                difficulty=1
+            )
+            question.insert()
+            question_id = question.id
 
-    def test_get_questions_by_invalid_category(self):
+            # First delete should succeed
+            response = self.client.delete(f"/questions/{question_id}")
+            self.assertEqual(response.status_code, 200)
+
+            # Second delete should fail with 404
+            response = self.client.delete(f"/questions/{question_id}")
+            self.assertEqual(response.status_code, 404)
+        return
+
+    # Questions By Categories Failures
+    def test_fails_to_get_questions_by_invalid_category(self):
         with self.app.app_context():
             response = self.client.get("/categories/1000/questions")
             self.assertEqual(response.status_code, 404)
 
         return 
 
+    def test_fail_to_get_questions_with_post_request(self):
+        with self.app.app_context():
+            response = self.client.post("/categories/1000/questions")
+            self.assertEqual(response.status_code, 405)
 
+        return 
+
+    # Categories Failures
+    def test_fails_to_get_categories_with_invalid_method(self):
+        with self.app.app_context():
+            response = self.client.post("/categories")
+            self.assertEqual(response.status_code, 405)
+
+        return 
+
+    def test_fail_to_get_categories_with_invalid_query_params(self):
+        with self.app.app_context():
+            response = self.client.get("/categories?page=1&malicious_param=123")
+            self.assertEqual(response.status_code, 401)
+
+        return 
+
+    # Questions Failures
+    def test_fails_to_get_questions_with_invalid_query_params(self):
+        with self.app.app_context():
+            response = self.client.get("/questions?page=1&malicious_param=123")
+            self.assertEqual(response.status_code, 401)
+
+        return 
+
+    def test_fail_to_get_categories_with_page_out_of_range(self):
+        with self.app.app_context():
+            response = self.client.get("/questions?page=1000")
+            self.assertEqual(response.status_code, 404)
+
+        return 
+
+    # Question Creation Failures
+    def test_fails_to_post_question_with_missing_request_fields(self):
+        with self.app.app_context():
+            response = self.client.post("/questions")
+            self.assertEqual(response.status_code, 415)
+
+        return 
+
+    def test_fail_to_get_categories_with_extra_request_body_fields(self):
+        with self.app.app_context():
+            response = self.client.post("/questions", json={
+                "question": "My incredible question",
+                "answer": "My incredible answer",
+                "category": "2",
+                "difficulty": 1,
+                "malicious_code_field": "function(){() => setTimeout(() => {}, 10000000)}"
+            })
+            self.assertEqual(response.status_code, 415)
+
+        return 
+
+    # Question Search Failures
+    def test_fails_to_search_for_questions(self):
+        with self.app.app_context():
+            response = self.client.post("/questions/search", json={
+                "searchTerm": "rm -rf /" 
+            })
+            self.assertEqual(response.status_code, 415)
+
+        return 
+
+    def test_fail_to_post_question_with_no_search_term(self):
+        with self.app.app_context():
+            response = self.client.post("/questions", json={
+                "searchTerm": ""
+            })
+            self.assertEqual(response.status_code, 415)
+
+        return
+
+    def test_fail_to_fetch_quizzes_with_invalid_category(self):
+        with self.app.app_context():
+            response = self.client.post("/quizzes", json={
+                "quiz_category": {"id": 100000000},
+                "previous_questions": []
+            })
+            self.assertEqual(response.status_code, 404)
+
+        return  
 # Make the tests conveniently executable
 if __name__ == "__main__":
     unittest.main()
